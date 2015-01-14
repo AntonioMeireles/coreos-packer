@@ -37,6 +37,7 @@ coreos-$(BOX_ID).box: tmp/CoreOS-$(BOX_ID).vmdk box/change_host_name.rb box/conf
 
 tmp/CoreOS-$(BOX_ID).vmdk: Vagrantfile oem/coreos-setup-environment oem/motd tmp/motdgen tmp/coreos-install tmp/cloud-config.yml
 	vagrant destroy -f
+	rm -rf "${HOME}/VirtualBox VMs/${VM_NAME}"
 	VM_NAME="${VM_NAME}" vagrant up --provider virtualbox --no-provision
 	vagrant provision
 	vagrant suspend
@@ -153,13 +154,7 @@ run_tests = @cd test; \
 		vagrant halt -f
 
 check:
-	@echo " - latest CoreOS releases, per channel"
-
-	@for channel in stable beta alpha; do\
-		id=$$(curl -Ls http://$$channel.release.core-os.net/amd64-usr/current/version.txt | \
-		   grep COREOS_VERSION_ID= | sed -e 's,.*=,,');\
-		echo "   - $$channel\t"$${id}; \
-	done
+	@./releaser
 
 clean: _clean
 	rm -rf *.box
@@ -170,4 +165,4 @@ _clean:
 	rm -rf tmp/
 	rm -rf parallels/
 
-.PHONY: box test clean _clean
+.PHONY: test clean _clean check
