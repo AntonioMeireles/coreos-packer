@@ -7,8 +7,10 @@ VAGRANTFILE_API_VERSION = "2"
 Vagrant.require_version ">= 1.5.0"
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
-  config.vm.define "coreos-packer"
+  channel = ENV['CHANNEL']
+  version_id = ENV['VERSION_ID']
 
+  config.vm.define "coreos-packer"
   config.vm.hostname = "coreos-packer"
 
   config.vm.box = "hashicorp/precise64"
@@ -21,9 +23,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     vb.memory = 1024
 
     # Create and attach a target HDD
+    vmdk = "tmp/CoreOS-%s-%s.vmdk" % [channel, version_id]
     vb.customize [
       "createhd",
-      "--filename", "tmp/CoreOS",
+      "--filename", vmdk,
       "--size", "40960",
       "--format", "VMDK",
     ]
@@ -33,7 +36,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       "--port", "1",
       "--device", "0",
       "--type", "hdd",
-      "--medium", "tmp/CoreOS.vmdk",
+      "--medium", vmdk,
     ]
     (1..8).each do |i|
       vb.customize [
@@ -44,18 +47,15 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
   config.vm.provision :shell do |s|
-    channel = ENV['CHANNEL'] || "beta"
-
     s.inline = <<-EOT
-      echo Installing CoreOS #{channel}
-      sudo /vagrant/tmp/coreos-install -d /dev/sdb -C #{channel} 2> /dev/null
+      echo Installing CoreOS #{channel}/#{version_id}
+      sudo /vagrant/tmp/coreos-install -d /dev/sdb -C #{channel} -V #{version_id} 2> /dev/null
       sudo mount /dev/sdb6 /mnt
       sudo cp /vagrant/tmp/cloud-config.yml /mnt/
       sudo mkdir -p /mnt/bin
       sudo cp /vagrant/oem/coreos-setup-environment /mnt/bin/
       sudo cp /vagrant/oem/motd /mnt/
-      sudo cp /vagrant/oem/motdgen /mnt/bin/
-      sudo cp /vagrant/tmp/docker-enter /mnt/bin/
+      sudo cp /vagrant/tmp/motdgen /mnt/bin/
       sudo umount /mnt
     EOT
   end

@@ -1,84 +1,75 @@
 VM_NAME  := CoreOS Packer
 BOX_NAME := CoreOS Box
 
-VERSION_ID := 1.2.9
-BUILD_ID   := `date -u '+%Y-%m-%d-%H%M'`
-CHANNEL    := master
+CHANNEL    ?= alpha
+VERSION_ID ?= $(shell curl -Ls http://$(CHANNEL).release.core-os.net/amd64-usr/current/version.txt | grep COREOS_VERSION_ID= | sed -e 's,.*=,,')
+BUILD_ID   ?= $(shell date -u '+%Y-%m-%d-%H%M')
+BOX_ID := $(CHANNEL)-$(VERSION_ID)
 
 PWD := `pwd`
 
-box: coreos.box
+export CHANNEL
+export VERSION_ID
 
-disk: tmp/CoreOS.vmdk
+$(BOX_ID).box: coreos-$(BOX_ID).box coreos-$(BOX_ID)-parallels.box
+	touch $(BOX_ID).box
 
-coreos.box: tmp/CoreOS.vmdk box/change_host_name.rb box/configure_networks.rb box/vagrantfile.tpl
+coreos-$(BOX_ID).box: tmp/CoreOS-$(BOX_ID).vmdk box/change_host_name.rb box/configure_networks.rb box/vagrantfile.tpl
+	@echo "\t == packing CoreOS release $(VERSION_ID) [$(CHANNEL) channel] for virtualbox =="
+	@echo
+
 	vagrant halt -f
-	#
-	# Clone
-	#
+
 	-VBoxManage unregistervm "${BOX_NAME}" --delete
 	VBoxManage clonevm "${VM_NAME}" --name "${BOX_NAME}" --register
-	#
-	# Clean up
-	#
+
 	VBoxManage storageattach "${BOX_NAME}" --storagectl "IDE Controller" --port 0 --device 0 --medium none
 	VBoxManage storageattach "${BOX_NAME}" --storagectl "IDE Controller" --port 1 --device 0 --medium none
 	VBoxManage storageattach "${BOX_NAME}" --storagectl "SATA Controller" --port 1 --device 0 --medium none
 	VBoxManage storageattach "${BOX_NAME}" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "${HOME}/VirtualBox VMs/${BOX_NAME}/${BOX_NAME}-disk2.vmdk"
 	VBoxManage closemedium disk "${HOME}/VirtualBox VMs/${BOX_NAME}/${BOX_NAME}-disk1.vmdk" --delete
 	VBoxManage modifyvm "${BOX_NAME}" --ostype Linux26_64
-	#
-	# Package
-	#
-	rm -f coreos.box
-	cd box; \
-	vagrant package --base "${BOX_NAME}" --output ../coreos.box --include change_host_name.rb,configure_networks.rb --vagrantfile vagrantfile.tpl
+
+	rm -f coreos-$(BOX_ID).box
+	cd box;	\
+	vagrant package --base "${BOX_NAME}" --output ../coreos-$(BOX_ID).box --include change_host_name.rb,configure_networks.rb --vagrantfile vagrantfile.tpl
 	VBoxManage unregistervm "${BOX_NAME}" --delete
 
-tmp/CoreOS.vmdk: Vagrantfile oem/coreos-setup-environment oem/motd oem/motdgen \
- 	tmp/coreos-install tmp/cloud-config.yml tmp/docker-enter
+tmp/CoreOS-$(BOX_ID).vmdk: Vagrantfile oem/coreos-setup-environment oem/motd tmp/motdgen tmp/coreos-install tmp/cloud-config.yml
 	vagrant destroy -f
-	VM_NAME="${VM_NAME}" vagrant up --no-provision
-	CHANNEL="${CHANNEL}" vagrant provision
+	VM_NAME="${VM_NAME}" vagrant up --provider virtualbox --no-provision
+	vagrant provision
 	vagrant suspend
 
-parallels: coreos-parallels.box
+coreos-$(BOX_ID)-parallels.box: tmp/CoreOS-$(BOX_ID).vmdk parallels/metadata.json parallels/change_host_name.rb parallels/configure_networks.rb parallels/Vagrantfile
+	@echo "\t == packing CoreOS release $(VERSION_ID) [$(CHANNEL) channel] for parallels =="
+	@echo
 
-coreos-parallels.box: tmp/CoreOS.vmdk parallels/metadata.json parallels/change_host_name.rb parallels/configure_networks.rb parallels/Vagrantfile
 	vagrant halt -f
-	#
-	# Convert VMDK to HDD
-	#
+
 	rm -rf "${HOME}/Documents/Parallels/CoreOS.hdd"
-	-prl_convert tmp/CoreOS.vmdk --allow-no-os
-	#
-	# Create Parallels VM
-	#
+	-prl_convert tmp/CoreOS-$(BOX_ID).vmdk --allow-no-os
+
 	-prlctl unregister "${VM_NAME}"
 	rm -rf "${HOME}/Documents/Parallels/${VM_NAME}.pvm"
 	prlctl create "${VM_NAME}" --ostype linux --distribution linux-2.6 --no-hdd
-	mv "${HOME}/Documents/Parallels/CoreOS.hdd" "${HOME}/Documents/Parallels/${VM_NAME}.pvm/"
-	prlctl set "${VM_NAME}" --device-add hdd --image "${HOME}/Documents/Parallels/${VM_NAME}.pvm/CoreOS.hdd"
+	mv "${HOME}/Documents/Parallels/CoreOS-${BOX_ID}.hdd" "${HOME}/Documents/Parallels/${VM_NAME}.pvm/"
+	prlctl set "${VM_NAME}" --device-add hdd --image "${HOME}/Documents/Parallels/${VM_NAME}.pvm/CoreOS-${BOX_ID}.hdd"
 	prlctl set "${VM_NAME}" --device-bootorder "hdd0 cdrom0"
-	#
-	# Clone
-	#
+
 	-prlctl unregister "${BOX_NAME}"
-	rm -rf "Parallels/${BOX_NAME}.pvm"
+	rm -rf "parallels/${BOX_NAME}.pvm"
 	prlctl clone "${VM_NAME}" --name "${BOX_NAME}" --template --dst "${PWD}/parallels"
 	prlctl unregister "${VM_NAME}"
 	rm -rf "${HOME}/Documents/Parallels/${VM_NAME}.pvm"
-	#
-	# Clean up
-	#
+
 	rm -f "parallels/${BOX_NAME}.pvm/config.pvs.backup"
-	rm -f "parallels/${BOX_NAME}.pvm/CoreOS.hdd/DiskDescriptor.xml.Backup"
-	#
-	# Package
-	#
-	rm -f coreos-parallels.box
-	cd parallels; tar zcvf ../coreos-parallels.box *
+	rm -f "parallels/${BOX_NAME}.pvm/CoreOS-${BOX_ID}.hdd/DiskDescriptor.xml.Backup"
+
+	rm -f coreos-$(BOX_ID)-parallels.box
+	cd parallels; tar zcvf ../coreos-$(BOX_ID)-parallels.box *
 	prlctl unregister "${BOX_NAME}"
+	rm -rf "parallels/${BOX_NAME}.pvm/"
 
 parallels/metadata.json:
 	mkdir -p parallels
@@ -98,102 +89,85 @@ parallels/Vagrantfile: box/vagrantfile.tpl
 
 tmp/coreos-install:
 	mkdir -p tmp
-ifneq ($(CHANNEL),master)
+	curl -Ls https://github.com/coreos/init/raw/master/bin/coreos-install -o tmp/coreos-install.upstream
+	@cmp -s tmp/coreos-install.upstream oem/coreos-install || \
+			( echo "error: coreos-install script changed at upstream. update it here, or voluntarly drop this check" && \
+				exit 1)
 	cp oem/coreos-install tmp/coreos-install
-else
-	cp oem/coreos-install.dev tmp/coreos-install
-endif
+	chmod +x tmp/coreos-install
+
+tmp/motdgen:
+	mkdir -p tmp
+	curl -Ls https://github.com/coreos/init/raw/master/scripts/motdgen -o tmp/motdgen.upstream
+	@(patch -p1 -i oem/motdgen.patch && cmp -s tmp/motdgen.upstream oem/motdgen) || \
+			( echo "error: motdgen script changed at upstream. update it here, or voluntarly drop this check." && \
+				exit 1)
+	cp oem/motdgen tmp/motdgen
+	chmod +x tmp/motdgen
 
 tmp/cloud-config.yml: oem/cloud-config.yml
 	mkdir -p tmp
 	sed -e "s/%VERSION_ID%/${VERSION_ID}/g" -e "s/%BUILD_ID%/${BUILD_ID}/g" oem/cloud-config.yml > tmp/cloud-config.yml
 
-tmp/docker-enter:
-	curl -L https://raw.githubusercontent.com/YungSang/docker-attach/master/docker-nsenter -o tmp/docker-enter
-	chmod +x tmp/docker-enter
+testup: test/Vagrantfile coreos-$(BOX_ID).box
+	@vagrant box add -f coreos coreos-$(BOX_ID).box --provider virtualbox
+	@cd test; vagrant destroy -f;  vagrant up --provider virtualbox;
 
-test: test/Vagrantfile coreos.box
-	@vagrant box add -f coreos coreos.box
-	@cd test; \
-	vagrant destroy -f; \
-	vagrant up; \
-	echo "-----> docker version"; \
-	DOCKER_HOST="tcp://localhost:2375"; \
-	docker version; \
-	echo "-----> docker images -t"; \
-	docker images -t; \
-	echo "-----> docker ps -a"; \
-	docker ps -a; \
-	echo "-----> nc localhost 8080"; \
-	nc localhost 8080; \
-	echo "-----> /etc/os-release"; \
-	vagrant ssh -c "cat /etc/os-release"; \
-	echo "-----> /etc/oem-release"; \
-	vagrant ssh -c "cat /etc/oem-release"; \
-	echo "-----> /etc/machine-id"; \
-	vagrant ssh -c "cat /etc/machine-id"; \
-	echo "-----> /etc/hostname"; \
-	vagrant ssh -c "cat /etc/hostname"; \
-	echo "-----> /etc/environment"; \
-	vagrant ssh -c "cat /etc/environment"; \
-	echo "-----> /etc/systemd/network/50-vagrant*.network"; \
-	vagrant ssh -c "cat /etc/systemd/network/50-vagrant*.network"; \
-	echo "-----> route"; \
-	vagrant ssh -c "route"; \
-	echo "-----> systemctl list-units"; \
-	vagrant ssh -c "systemctl list-units --no-pager"; \
-	echo '-----> docker-enter `docker ps -l -q` ls -l'; \
-	vagrant ssh -c 'docker-enter `docker ps -l -q` ls -l'; \
-	echo '-----> docker exec `docker ps -l -q` ls -l'; \
-	docker exec `docker ps -l -q` ls -l; \
-	vagrant suspend
+test: testup
+	$(run_tests)
 
-ptest: DOCKER_HOST_IP=$(shell cd test; vagrant ssh-config | sed -n "s/[ ]*HostName[ ]*//gp")
 ptest: ptestup
-	@cd test; \
-	echo "-----> docker version"; \
-	DOCKER_HOST="tcp://${DOCKER_HOST_IP}:2375"; \
-	docker version; \
-	echo "-----> docker images -t"; \
-	docker images -t; \
-	echo "-----> docker ps -a"; \
-	docker ps -a; \
-	echo "-----> nc ${DOCKER_HOST_IP} 8080"; \
-	nc ${DOCKER_HOST_IP} 8080; \
-	echo "-----> /etc/os-release"; \
-	vagrant ssh -c "cat /etc/os-release"; \
-	echo "-----> /etc/oem-release"; \
-	vagrant ssh -c "cat /etc/oem-release"; \
-	echo "-----> /etc/machine-id"; \
-	vagrant ssh -c "cat /etc/machine-id"; \
-	echo "-----> /etc/hostname"; \
-	vagrant ssh -c "cat /etc/hostname"; \
-	echo "-----> /etc/environment"; \
-	vagrant ssh -c "cat /etc/environment"; \
-	echo "-----> /etc/systemd/network/50-vagrant*.network"; \
-	vagrant ssh -c "cat /etc/systemd/network/50-vagrant*.network"; \
-	echo "-----> route"; \
-	vagrant ssh -c "route"; \
-	echo "-----> systemctl list-units"; \
-	vagrant ssh -c "systemctl list-units --no-pager"; \
-	echo '-----> docker-enter `docker ps -l -q` ls -l'; \
-	vagrant ssh -c 'docker-enter `docker ps -l -q` ls -l'; \
-	echo '-----> docker exec `docker ps -l -q` ls -l'; \
-	docker exec `docker ps -l -q` ls -l; \
-	vagrant suspend
+	$(run_tests)
 
-ptestup: test/Vagrantfile coreos-parallels.box
-	@vagrant box add -f coreos coreos-parallels.box --provider parallels
-	@cd test; \
-	vagrant destroy -f; \
-	vagrant up --provider parallels; \
+ptestup: test/Vagrantfile coreos-$(BOX_ID)-parallels.box
+	@vagrant box add -f coreos coreos-$(BOX_ID)-parallels.box --provider parallels
+	@cd test; vagrant destroy -f;  vagrant up --provider parallels;
 
-clean:
+run_tests = @cd test; \
+		export DOCKER_HOST_IP=$$(cd test; vagrant ssh-config  2>/dev/null | grep -A1 coreos-test | sed -n "s/[ ]*HostName[ ]*//gp"); \
+		echo "\n:: nc $${DOCKER_HOST_IP} 8080 ::" ; \
+		nc $${DOCKER_HOST_IP} 8080; \
+		echo "\n:: docker version ::" ; \
+		vagrant ssh -c "docker version" 2>/dev/null; \
+		echo "\n:: docker images -t ::" ; \
+		vagrant ssh -c "docker images -t" 2>/dev/null; \
+		echo "\n:: docker ps -a ::"; \
+		vagrant ssh -c "docker ps -a" 2>/dev/null; \
+		echo "\n:: cat /etc/os-release ::"; \
+		vagrant ssh -c "cat /etc/os-release" 2>/dev/null; \
+		echo "\n:: cat /etc/oem-release ::"; \
+		vagrant ssh -c "cat /etc/oem-release" 2>/dev/null; \
+		echo "\n:: cat /etc/machine-id ::"; \
+		vagrant ssh -c "cat /etc/machine-id" 2>/dev/null; \
+		echo "\n:: cat /etc/hostname ::"; \
+		vagrant ssh -c "cat /etc/hostname" 2>/dev/null; \
+		echo "\n:: cat /etc/environment ::"; \
+		vagrant ssh -c "cat /etc/environment" 2>/dev/null; \
+		echo "\n:: route ::"; \
+		vagrant ssh -c "route" 2>/dev/null; \
+		echo "\n:: systemctl list-units --no-pager ::"; \
+		vagrant ssh -c "systemctl list-units --no-pager" 2>/dev/null; \
+		echo "\n:: docker exec `docker ps -l -q` ls -l; uname -a; ::"; \
+		vagrant ssh -c 'docker exec `docker ps -l -q` ls -l; uname -a' 2>/dev/null; \
+		echo "\n:: "; \
+		vagrant halt -f
+
+check:
+	@echo " - latest CoreOS releases, per channel"
+
+	@for channel in stable beta alpha; do\
+		id=$$(curl -Ls http://$$channel.release.core-os.net/amd64-usr/current/version.txt | \
+		   grep COREOS_VERSION_ID= | sed -e 's,.*=,,');\
+		echo "   - $$channel\t"$${id}; \
+	done
+
+clean: _clean
+	rm -rf *.box
+
+_clean:
 	vagrant destroy -f
 	cd test; vagrant destroy -f
-	rm -f coreos.box
 	rm -rf tmp/
-	rm -f coreos-parallels.box
 	rm -rf parallels/
 
-.PHONY: box test clean
+.PHONY: box test clean _clean

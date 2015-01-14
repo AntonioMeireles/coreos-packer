@@ -1,36 +1,35 @@
+this is based in [YungSang](https://github.com/YungSang/coreos-packer)'s original work and research, and is _just_ a refactoring to suit my particular tastes.  
+
 # CoreOS Packer for Vagrant Box
 
-Build a Vagrant box with CoreOS
-
-- Based on CoreOS **Stable** 494.5.0
-    - kernel v3.17.2
-    - etcd v0.4.6
-    - fleet v0.8.3
-    - **docker v1.3.3**
-    - coreos-cloudinit v0.10.9
-    - systemd 215
-- Add OEM files for Vagrant and patch them
-    - Cf.) https://github.com/coreos/coreos-overlay/pull/568
-    - Cf.) https://github.com/YungSang/coreos-packer/tree/overlay-568
-- Enable the Docker daemon
-- Open the official IANA registered **[Docker port 2375](http://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=docker)**
-- **Add `docker-enter`(`docker-attach`) script to use `nsenter` easily**
+a tool for building [CoreOS](http://www.coreos.com) Vagrant VirtualBox and Parallels boxes
 
 ## How to Build
 
 ```
-$ make
+$ CHANNEL=$channel VERSION_ID=$version_id make 
 ```
+where **$channel** is one of *alpha*, *beta* or *stable* (default is _alpha_) and **$version** a given CoreOS release (the default is the latest one). see [here](https://coreos.com/releases/) for what's available
+ 
+in order to build all the latest versions for all channels one would do ... 
+
+```
+for channel in stable beta alpha; do \
+	make _clean; \
+    CHANNEL=$channel make; \
+    done;
+```
+
 
 ## How to Use
 
 ```
-$ vagrant box add coreos coreos.box
-$ vagrant init coreos
+$ vagrant box add coreos-beta coreos-beta-522.5.0-parallels.box
+$ vagrant init coreos-beta
 $ vagrant up
 ```
 
-Or
+Or, manually
 
 ```
 VAGRANTFILE_API_VERSION = "2"
@@ -38,7 +37,7 @@ VAGRANTFILE_API_VERSION = "2"
 Vagrant.require_version ">= 1.5.0"
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
-  config.vm.box = "yungsang/coreos"
+  config.vm.box = "AntonioMeireles/coreos"
 
   config.vm.network "forwarded_port", guest: 2375, host: 2375
 
@@ -66,10 +65,11 @@ $ docker ps -a
 $ nc localhost 8080
 hello world!
 ```
+## Pre-built boxes
 
-## License
+boxes built with this tool are available at Vagrant's Atlas [here](https://atlas.hashicorp.com/AntonioMeireles/).
 
+## Licensing
 [![CC0](http://i.creativecommons.org/p/zero/1.0/88x31.png)](http://creativecommons.org/publicdomain/zero/1.0/)  
-To the extent possible under law, the person who associated CC0 with this work has waived all copyright and related or neighboring rights to this work.
 
-- [CoreOS](https://coreos.com/) is under the [Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0)?
+To the extent possible under law, the person who associated CC0 with this work has waived all copyright and related or neighbouring rights to this work.

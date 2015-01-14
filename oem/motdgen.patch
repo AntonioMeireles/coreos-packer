@@ -1,0 +1,21 @@
+diff --git a/tmp/motdgen.upstream b/tmp/motdgen.upstream
+old mode 100644
+new mode 100755
+index f6efa42..28e06d6
+--- a/tmp/motdgen.upstream
++++ b/tmp/motdgen.upstream
+@@ -11,7 +11,13 @@
+ source /usr/lib/os-release
+ 
+ mkdir -p /run/coreos
+-echo -e "Core\033[38;5;206mO\033[38;5;45mS\033[39m ${GROUP} (${VERSION})" > /run/coreos/motd
++
++if [ -f /usr/share/oem/motd ]; then
++	cat /usr/share/oem/motd > /run/coreos/motd
++	echo -e "${GROUP} (${VERSION})" >> /run/coreos/motd
++else
++	echo -e "Core\033[38;5;206mO\033[38;5;45mS\033[39m ${GROUP} (${VERSION})" > /run/coreos/motd
++fi
+ 
+ if [[ -d "/etc/motd.d" ]]; then
+ 	cat /etc/motd.d/*.conf 2>/dev/null >> /run/coreos/motd || true

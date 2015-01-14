@@ -1,0 +1,7 @@
+
+
+[CoreOS](https://coreos.com/) box built with [CoreOS-packer](https://github.com/AntonioMeireles/coreos-packer)
+
+channel: **_CHANNEL_**
+
+release: **_VERSION_ID_**
