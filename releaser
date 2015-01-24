@@ -1,4 +1,11 @@
 #!/bin/sh
+#
+# Copyright (c) 2015 António Meireles <antonio.meireles@reformi.st>
+#
+# This file is distributed under the terms of the MIT License.
+# A copy is available at http://opensource.org/licenses/MIT
+#
+
 set -eu -o pipefail && LC_ALL=C && [[ "${TRACE:-}" ]] && set -x
 
 GITHUB_USERNAME=${GITHUB_USERNAME:-AntonioMeireles}
