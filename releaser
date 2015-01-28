@@ -122,15 +122,16 @@ main () {
         currentAtlas=$(getDataFromAtlas ${ATLAS_USERNAME} ${channel})
         id=$(getVersionID ${channel})
         versions=$( (echo $(getExistingReleases ${currentAtlas}); echo ${id}) | sort -nu )
-        status=" (unreleased)"
-
-        checkIfVersionExists ${currentAtlas} ${id} || addNewVersion ${ATLAS_USERNAME} ${channel} ${id}
-        checkIfVersionIsPublished ${currentAtlas} ${id} && status=" (published) "
 
         echo "   - ${channel}"
 
         for version in ${versions}; do
+            status=" (unreleased)"
+            checkIfVersionExists ${currentAtlas} ${version} || addNewVersion ${ATLAS_USERNAME} ${channel} ${id}
+            checkIfVersionIsPublished ${currentAtlas} ${version} && status=" (published) "
+
             echo "     - ${version} ${status}"
+
             for provider in ${PROVIDERS[@]}; do
                 checkIfVersionHasProviderUploaded ${currentAtlas} ${version} ${provider} || \
                     echo "       > ${provider}: box not yet uploaded"
