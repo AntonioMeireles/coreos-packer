@@ -82,7 +82,7 @@ checkIfVersionHasProviderUploaded () {
     declare currentAtlas="$1" version="$2" provider="$3"
     v=$(cat ${currentAtlas} | jq --arg version ${version} --arg provider ${provider} \
         '.versions[] | select(.version==$version).providers[] | select(.name==$provider) | .hosted_token')
-    if [[ "${v}" == "null" ]]; then
+    if [[ -z "${v}" || "${v}" == "null" ]]; then
         return 1
     fi
     return 0
@@ -115,6 +115,7 @@ getExistingReleases () {
     declare currentAtlas="$1"
     cat ${currentAtlas} | jq '.versions[]| .version' | cut -c 2- | rev | cut -c 2- | rev
 }
+
 main () {
     checkRequires
     echo " - available CoreOS releases, per channel"

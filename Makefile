@@ -11,10 +11,10 @@ PWD := `pwd`
 export CHANNEL
 export VERSION_ID
 
-$(BOX_ID).box: coreos-$(BOX_ID).box coreos-$(BOX_ID)-parallels.box
-	touch $(BOX_ID).box
+all: clean coreos-$(BOX_ID)-virtualbox.box coreos-$(BOX_ID)-parallels.box
 
-coreos-$(BOX_ID).box: tmp/CoreOS-$(BOX_ID).vmdk box/change_host_name.rb box/configure_networks.rb box/vagrantfile.tpl
+coreos-$(BOX_ID)-virtualbox.box: tmp/CoreOS-$(BOX_ID).vmdk box/change_host_name.rb box/configure_networks.rb box/vagrantfile.tpl
+	@echo
 	@echo "\t == packing CoreOS release $(VERSION_ID) [$(CHANNEL) channel] for virtualbox =="
 	@echo
 
@@ -32,17 +32,18 @@ coreos-$(BOX_ID).box: tmp/CoreOS-$(BOX_ID).vmdk box/change_host_name.rb box/conf
 
 	rm -f coreos-$(BOX_ID).box
 	cd box;	\
-	vagrant package --base "${BOX_NAME}" --output ../coreos-$(BOX_ID).box --include change_host_name.rb,configure_networks.rb --vagrantfile vagrantfile.tpl
+	vagrant package --base "${BOX_NAME}" --output ../coreos-$(BOX_ID)-virtualbox.box --include change_host_name.rb,configure_networks.rb --vagrantfile vagrantfile.tpl
 	VBoxManage unregistervm "${BOX_NAME}" --delete
 
 tmp/CoreOS-$(BOX_ID).vmdk: Vagrantfile oem/coreos-setup-environment oem/motd tmp/motdgen tmp/coreos-install tmp/cloud-config.yml
 	vagrant destroy -f
 	rm -rf "${HOME}/VirtualBox VMs/${VM_NAME}"
-	VM_NAME="${VM_NAME}" vagrant up --provider virtualbox --no-provision
+	VM_NAME="${VM_NAME}" CHANNEL="${CHANNEL}" VERSION_ID=${VERSION_ID} vagrant up --provider virtualbox --no-provision
 	vagrant provision
 	vagrant suspend
 
 coreos-$(BOX_ID)-parallels.box: tmp/CoreOS-$(BOX_ID).vmdk parallels/metadata.json parallels/change_host_name.rb parallels/configure_networks.rb parallels/Vagrantfile
+	@echo
 	@echo "\t == packing CoreOS release $(VERSION_ID) [$(CHANNEL) channel] for parallels =="
 	@echo
 
@@ -110,7 +111,7 @@ tmp/cloud-config.yml: oem/cloud-config.yml
 	mkdir -p tmp
 	sed -e "s/%VERSION_ID%/${VERSION_ID}/g" -e "s/%BUILD_ID%/${BUILD_ID}/g" oem/cloud-config.yml > tmp/cloud-config.yml
 
-testup: test/Vagrantfile coreos-$(BOX_ID).box
+testup: coreos-$(BOX_ID).box
 	@vagrant box add -f coreos coreos-$(BOX_ID).box --provider virtualbox
 	@cd test; vagrant destroy -f;  vagrant up --provider virtualbox;
 
@@ -120,12 +121,12 @@ test: testup
 ptest: ptestup
 	$(run_tests)
 
-ptestup: test/Vagrantfile coreos-$(BOX_ID)-parallels.box
+ptestup: coreos-$(BOX_ID)-parallels.box
 	@vagrant box add -f coreos coreos-$(BOX_ID)-parallels.box --provider parallels
 	@cd test; vagrant destroy -f;  vagrant up --provider parallels;
 
 run_tests = @cd test; \
-		export DOCKER_HOST_IP=$$(cd test; vagrant ssh-config  2>/dev/null | grep -A1 coreos-test | sed -n "s/[ ]*HostName[ ]*//gp"); \
+		export DOCKER_HOST_IP=$$(vagrant ssh-config  2>/dev/null | grep -A1 coreos-test | sed -n "s/[ ]*HostName[ ]*//gp"); \
 		echo "\n:: nc $${DOCKER_HOST_IP} 8080 ::" ; \
 		nc $${DOCKER_HOST_IP} 8080; \
 		echo "\n:: docker version ::" ; \
@@ -156,13 +157,11 @@ run_tests = @cd test; \
 check:
 	@./releaser
 
-clean: _clean
-	rm -rf *.box
-
-_clean:
+clean:
+	rm -rf *$(BOX_ID)*.box
 	vagrant destroy -f
 	cd test; vagrant destroy -f
 	rm -rf tmp/
 	rm -rf parallels/
 
-.PHONY: test clean _clean check
+.PHONY: clean all
