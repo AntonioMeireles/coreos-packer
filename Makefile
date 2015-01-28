@@ -35,7 +35,7 @@ coreos-$(BOX_ID)-virtualbox.box: tmp/CoreOS-$(BOX_ID).vmdk box/change_host_name.
 	vagrant package --base "${BOX_NAME}" --output ../coreos-$(BOX_ID)-virtualbox.box --include change_host_name.rb,configure_networks.rb --vagrantfile vagrantfile.tpl
 	VBoxManage unregistervm "${BOX_NAME}" --delete
 
-tmp/CoreOS-$(BOX_ID).vmdk: Vagrantfile oem/coreos-setup-environment oem/motd tmp/motdgen tmp/coreos-install tmp/cloud-config.yml
+tmp/CoreOS-$(BOX_ID).vmdk: Vagrantfile oem/coreos-setup-environment tmp/coreos-install tmp/cloud-config.yml
 	vagrant destroy -f
 	rm -rf "${HOME}/VirtualBox VMs/${VM_NAME}"
 	VM_NAME="${VM_NAME}" CHANNEL="${CHANNEL}" VERSION_ID=${VERSION_ID} vagrant up --provider virtualbox --no-provision
@@ -97,15 +97,6 @@ tmp/coreos-install:
 				exit 1)
 	cp oem/coreos-install tmp/coreos-install
 	chmod +x tmp/coreos-install
-
-tmp/motdgen:
-	mkdir -p tmp
-	curl -Ls https://github.com/coreos/init/raw/master/scripts/motdgen -o tmp/motdgen.upstream
-	@(patch -p1 -i oem/motdgen.patch && cmp -s tmp/motdgen.upstream oem/motdgen) || \
-			( echo "error: motdgen script changed at upstream. update it here, or voluntarly drop this check." && \
-				exit 1)
-	cp oem/motdgen tmp/motdgen
-	chmod +x tmp/motdgen
 
 tmp/cloud-config.yml: oem/cloud-config.yml
 	mkdir -p tmp
