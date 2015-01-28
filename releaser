@@ -62,7 +62,7 @@ updateAllVersionsDescriptions () {
 addNewVersion () {
     declare user="$1" channel="$2" version="$3"
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/versions
-    curl ${endpoint} -X POST -d "version[version]=${version}" -d "access_token=${ATLAS_API_TOKEN}"
+    curl -s ${endpoint} -X POST -d "version[version]=${version}" -d "access_token=${ATLAS_API_TOKEN}"
     for provider in ${PROVIDERS[@]}; do
         endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}/providers
         curl -s ${endpoint} -X POST \
