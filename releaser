@@ -118,7 +118,7 @@ getExistingReleases () {
 
 main () {
     checkRequires
-    echo " - available CoreOS releases, per channel"
+    echo " - available CoreOS releases, per channel (as off $(date -u "+%Y.%m.%d %H:%M"))"
     for channel in ${CHANNELS[@]}; do
         currentAtlas=$(getDataFromAtlas ${ATLAS_USERNAME} ${channel})
         id=$(getVersionID ${channel})
