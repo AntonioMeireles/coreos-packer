@@ -6,7 +6,9 @@
 # A copy is available at http://opensource.org/licenses/MIT
 #
 
-set -eu -o pipefail && LC_ALL=C && [[ "${TRACE:-}" ]] && set -x
+set -eu -o pipefail
+LC_ALL=C
+[[ "${TRACE:-}" ]] && set -x
 
 GITHUB_USERNAME=${GITHUB_USERNAME:-AntonioMeireles}
 ATLAS_USERNAME=${ATLAS_USERNAME:-AntonioMeireles}
@@ -22,39 +24,44 @@ scream () {
 
 fetchVersionReleaseNotes () {
     declare version="$1"
-    revision=v${version}
-    preAuth=""
-    [[ -n "${GITHUB_API_TOKEN}" ]] && preAuth='-H "Authorization: token ${GITHUB_API_TOKEN}"'
-    curl ${preAuth} -s https://api.github.com/repos/coreos/manifest/releases | \
-    jq --arg rev ${revision} '.[] | select(.tag_name==$rev) .body' -e || \
+    revision="v${version}"
+    preAuth="-H 'Authorization: token ${GITHUB_API_TOKEN}'"
+    [[ -z "${GITHUB_API_TOKEN}" ]] && preAuth=""
+    jqQ=".[] | select(.tag_name==\$rev) .body"
+    curl "${preAuth}" -s https://api.github.com/repos/coreos/manifest/releases | \
+    jq --arg rev "${revision}" "${jqQ}" -e || \
           scream "oops. ${rev} doesn't seem available at github..."
 }
 
 generateVersionSummary () {
     declare user="$1" channel="$2" version="$3"
-    highlights=$( (fetchVersionReleaseNotes ${version} || exit 1) | cut -c 2- | rev | cut -c 2- | rev)
+    highlights=$( (fetchVersionReleaseNotes "${version}" || exit 1) | \
+        cut -c 2- | rev | cut -c 2- | rev)
+    root="https://github.com/${GITHUB_USERNAME}/coreos-packer"
     printf "%s\n" "##CoreOS [${version}](https://coreos.com/releases/#${version})\n"\
            "\r###release highlights:\n" \
            "\r${highlights}\n"\
            "\r___\n"\
-           "\rbuilt with [CoreOS-packer](https://github.com/${GITHUB_USERNAME}/coreos-packer)."\
-           "Please [report](https://github.com/${GITHUB_USERNAME}/coreos-packer/issues) any issue you may find."
+           "\rbuilt with [CoreOS-packer](${root})."\
+           "Please [report](${root}/issues) any issue you may find."
 }
 
 updateVersionDescription () {
     declare user="$1" channel="$2" version="$3"
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}
-    curl -s $endpoint -X PUT -d "version[description]=$(echo $(generateVersionSummary $*))" \
+    summary="$(generateVersionSummary '$*')"
+    curl -s "${endpoint}" -X PUT -d "version[description]=${summary}" \
           -d "access_token=${ATLAS_API_TOKEN}"
 }
 
 updateAllVersionsDescriptions () {
-    for channel in ${CHANNELS[@]}; do
-        endpoint=${ATLAS_API_ENDPOINT}/${ATLAS_USERNAME}/coreos-${channel}/
-        for revision in $(echo $(curl -s ${endpoint} | \
-            jq '.versions | .[] | select(.status=="active") | .version') | tr '"' ' ') ; do
-                echo "\n==${channel}= ${revision} ===\n"
-                updateVersionDescription ${ATLAS_USERNAME} ${channel} ${revision}
+    for channel in "${CHANNELS[@]}"; do
+        endpoint="${ATLAS_API_ENDPOINT}/${ATLAS_USERNAME}/coreos-${channel}/"
+        jqQ=" .versions[] | select(.status==\"active\") | .version"
+        revisions=`curl -s "${endpoint}" | jq "${jqQ}" | cut -c 2- | rev | cut -c 2- | rev `
+        for revision in ${revisions}; do
+                printf "%s\n" "==${channel}== ${revision} ==="
+                updateVersionDescription "${ATLAS_USERNAME}" "${channel}" "${revision}"
         done
     done
 }
@@ -62,43 +69,45 @@ updateAllVersionsDescriptions () {
 addNewVersion () {
     declare user="$1" channel="$2" version="$3"
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/versions
-    curl -s ${endpoint} -X POST -d "version[version]=${version}" -d "access_token=${ATLAS_API_TOKEN}"
-    for provider in ${PROVIDERS[@]}; do
+    curl -s "${endpoint}" -X POST -d "version[version]=${version}" \
+         -d "access_token=${ATLAS_API_TOKEN}"
+    for provider in "${PROVIDERS[@]}"; do
         endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}/providers
-        curl -s ${endpoint} -X POST \
+        curl -s "${endpoint}" -X POST \
             -d "provider[name]=${provider}" -d "access_token=${ATLAS_API_TOKEN}"
     done
-    updateVersionDescription $*
+    updateVersionDescription "$@"
 }
 
 checkIfVersionExists () {
     declare  currentAtlas="$1" version="$2"
-    [[ -z $(cat ${currentAtlas} | jq --arg version ${version} \
-         -e '.versions[] | select(.version==$version)' ) ]] && return 1
+    jqQ=".versions[] | select(.version==\$version)"
+    [[ -z $( jq --arg version "${version}" \
+        -e "${jqQ}" < "${currentAtlas}" ) ]] && return 1
     return 0
 }
 
 checkIfVersionHasProviderUploaded () {
     declare currentAtlas="$1" version="$2" provider="$3"
-    v=$(cat ${currentAtlas} | jq --arg version ${version} --arg provider ${provider} \
-        '.versions[] | select(.version==$version).providers[] | select(.name==$provider) | .hosted_token')
-    if [[ -z "${v}" || "${v}" == "null" ]]; then
-        return 1
-    fi
+    jqQ=".versions[] | select(.version==\$version).providers[] |"
+    jqQ+=" select(.name==\$provider) | .hosted_token"
+    v=$(jq --arg version "${version}" \
+        --arg provider "${provider}" "${jqQ}" < "${currentAtlas}")
+    [[ -z "${v}" || "${v}" == "null" ]] && return 1
     return 0
 }
 
 checkIfVersionIsPublished () {
     declare currentAtlas="$1" version="$2"
-    [[ -z $(cat ${currentAtlas} | jq --arg version ${version} -e \
-            '.versions[] | select(.version==$version and .status=="active")') ]] && return 1
+    jqQ=".versions[] | select(.version==\$version and .status==\"active\")"
+    [[ -z $( jq --arg version "${version}" -e "${jqQ}" < "${currentAtlas}" ) ]] && return 1
     return 0
 }
 
 getVersionID () {
     declare channel="$1"
-    v_url=http://${channel}.release.core-os.net/amd64-usr/current/version.txt
-    echo $(curl -Ls ${v_url} | grep COREOS_VERSION_ID= | sed -e 's,.*=,,')
+    v_url="http://${channel}.release.core-os.net/amd64-usr/current/version.txt"
+    curl -Ls "${v_url}" | grep COREOS_VERSION_ID= | sed -e 's,.*=,,'
 }
 checkRequires () {
     jq --version >/dev/null 2>&1 || scream "'jq' required but not found. Aborting."
@@ -107,38 +116,42 @@ checkRequires () {
 getDataFromAtlas () {
     declare user="$1" channel="$2"
     tmp="$(mktemp)"
-    curl -s ${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/ > ${tmp}
-    echo ${tmp}
+    curl -s "${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}"/ > "${tmp}"
+    echo "${tmp}"
 }
 
 getExistingReleases () {
     declare currentAtlas="$1"
-    cat ${currentAtlas} | jq '.versions[]| .version' | cut -c 2- | rev | cut -c 2- | rev
+    jq '.versions[]| .version' < "${currentAtlas}" | cut -c 2- | rev | cut -c 2- | rev
 }
 
 main () {
     checkRequires
-    echo " - available CoreOS releases, per channel (as off $(date -u "+%Y.%m.%d %H:%M"))"
-    for channel in ${CHANNELS[@]}; do
-        currentAtlas=$(getDataFromAtlas ${ATLAS_USERNAME} ${channel})
-        id=$(getVersionID ${channel})
-        versions=$( (echo $(getExistingReleases ${currentAtlas}); echo ${id}) | sort -nu )
+    echo " - available CoreOS releases, per channel"
+    echo "   \t\t(as off $(date -u "+%Y.%m.%d %H:%M"))"
+    for channel in "${CHANNELS[@]}"; do
+        currentAtlas=$(getDataFromAtlas "${ATLAS_USERNAME}" "${channel}")
+        id=$(getVersionID "${channel}")
+        already=$(getExistingReleases "${currentAtlas}")
+        current="${already} ${id}"
+        versions=$( echo "${current}" | tr " " "\n" | sort -nur )
 
         echo "   - ${channel}"
 
         for version in ${versions}; do
             status=" (unreleased)"
-            checkIfVersionExists ${currentAtlas} ${version} || addNewVersion ${ATLAS_USERNAME} ${channel} ${id}
-            checkIfVersionIsPublished ${currentAtlas} ${version} && status=" (published) "
+            checkIfVersionExists "${currentAtlas}" "${version}" || \
+                addNewVersion "${ATLAS_USERNAME}" "${channel}" "${id}"
+            checkIfVersionIsPublished "${currentAtlas}" "${version}" && status=" (published) "
 
             echo "     - ${version} ${status}"
 
-            for provider in ${PROVIDERS[@]}; do
-                checkIfVersionHasProviderUploaded ${currentAtlas} ${version} ${provider} || \
+            for provider in "${PROVIDERS[@]}"; do
+                checkIfVersionHasProviderUploaded "${currentAtlas}" "${version}" "${provider}" || \
                     echo "       > ${provider}: box not yet uploaded"
             done
         done
-        rm -rf ${currentAtlas}
+        rm -rf "${currentAtlas}"
     done
 }
 
