@@ -137,19 +137,20 @@ main () {
         versions=$( echo "${current}" | tr " " "\n" | sort -nur )
 
         echo "   - ${channel}"
-
         for version in ${versions}; do
             status=" (unreleased)"
-            checkIfVersionExists "${currentAtlas}" "${version}" || \
-                addNewVersion "${ATLAS_USERNAME}" "${channel}" "${id}"
-            checkIfVersionIsPublished "${currentAtlas}" "${version}" && status=" (published) "
-
-            echo "     - ${version} ${status}"
-
-            for provider in "${PROVIDERS[@]}"; do
-                checkIfVersionHasProviderUploaded "${currentAtlas}" "${version}" "${provider}" || \
+            if checkIfVersionExists "${currentAtlas}" "${version}"; then
+                checkIfVersionIsPublished "${currentAtlas}" "${version}" && \
+                    status=" (published) "
+                echo "     - ${version} ${status}"
+                for provider in "${PROVIDERS[@]}"; do
+                    checkIfVersionHasProviderUploaded "${currentAtlas}" "${version}" "${provider}" || \
                     echo "       > ${provider}: box not yet uploaded"
-            done
+                done
+            else
+                [[  "$#" -eq 1 && "$1" == "-n" ]] && \
+                    addNewVersion "${ATLAS_USERNAME}" "${channel}" "${id}"
+            fi
         done
         rm -rf "${currentAtlas}"
     done
