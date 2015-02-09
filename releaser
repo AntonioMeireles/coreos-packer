@@ -110,7 +110,10 @@ getVersionID () {
     curl -Ls "${v_url}" | grep COREOS_VERSION_ID= | sed -e 's,.*=,,'
 }
 checkRequires () {
-    jq --version >/dev/null 2>&1 || scream "'jq' required but not found. Aborting."
+    for bin in jq curl sed tr cat cut grep rev sort; do
+        which ${bin} >/dev/null 2>&1 || \
+            scream "'${bin}' required but not found in your \$PATH. Aborting."
+    done
 }
 
 getDataFromAtlas () {
