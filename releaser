@@ -25,17 +25,17 @@ scream () {
 fetchVersionReleaseNotes () {
     declare version="$1"
     revision="v${version}"
-    preAuth="-H 'Authorization: token ${GITHUB_API_TOKEN}'"
-    [[ -z "${GITHUB_API_TOKEN}" ]] && preAuth=""
-    jqQ=".[] | select(.tag_name==\$rev) .body"
-    curl "${preAuth}" -s https://api.github.com/repos/coreos/manifest/releases | \
-    jq --arg rev "${revision}" "${jqQ}" -e || \
-          scream "oops. ${rev} doesn't seem available at github..."
+    preAuth=(-H "Authorization: token ${GITHUB_API_TOKEN} ")
+    [[ -z "${GITHUB_API_TOKEN}" ]] && preAuth=()
+    jqQ=".[] | select(.tag_name==\$revision) .body"
+    curl "${preAuth[@]}" -s https://api.github.com/repos/coreos/manifest/releases | \
+    jq --arg revision "${revision}" "${jqQ}" -e || \
+          scream "oops. ${revision} doesn't seem available at github..."
 }
 
 generateVersionSummary () {
     declare user="$1" channel="$2" version="$3"
-    highlights=$( (fetchVersionReleaseNotes "${version}" || exit 1) | \
+    highlights=$(fetchVersionReleaseNotes "${version}" | \
         cut -c 2- | rev | cut -c 2- | rev)
     root="https://github.com/${GITHUB_USERNAME}/coreos-packer"
     printf "%s\n" "##CoreOS [${version}](https://coreos.com/releases/#${version})\n"\
@@ -49,16 +49,19 @@ generateVersionSummary () {
 updateVersionDescription () {
     declare user="$1" channel="$2" version="$3"
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}
-    summary="$(generateVersionSummary '$*')"
-    curl -s "${endpoint}" -X PUT -d "version[description]=${summary}" \
-          -d "access_token=${ATLAS_API_TOKEN}"
+    raw_summary=$(generateVersionSummary "${user}" "${channel}" "${version}")
+    summary=$(echo "${raw_summary}" | sed -e 's,\\,,g')
+    curl -s "${endpoint}" -X PUT \
+           -d "version[description]=${summary}" \
+           -d "access_token=${ATLAS_API_TOKEN}" &>/dev/null || \
+         scream "unable do update summary of ${channel}/${version}. Aborting."
 }
 
 updateAllVersionsDescriptions () {
     for channel in "${CHANNELS[@]}"; do
         endpoint="${ATLAS_API_ENDPOINT}/${ATLAS_USERNAME}/coreos-${channel}/"
         jqQ=" .versions[] | select(.status==\"active\") | .version"
-        revisions=`curl -s "${endpoint}" | jq "${jqQ}" | cut -c 2- | rev | cut -c 2- | rev `
+        revisions=$(curl -s "${endpoint}" | jq "${jqQ}" | cut -c 2- | rev | cut -c 2- | rev)
         for revision in ${revisions}; do
                 printf "%s\n" "==${channel}== ${revision} ==="
                 updateVersionDescription "${ATLAS_USERNAME}" "${channel}" "${revision}"
@@ -70,13 +73,16 @@ addNewVersion () {
     declare user="$1" channel="$2" version="$3"
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/versions
     curl -s "${endpoint}" -X POST -d "version[version]=${version}" \
-         -d "access_token=${ATLAS_API_TOKEN}"
+         -d "access_token=${ATLAS_API_TOKEN}" &>/dev/null || \
+        scream "unable do add ${channel}/${version} to Atlas. Aborting."
     for provider in "${PROVIDERS[@]}"; do
         endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}/providers
         curl -s "${endpoint}" -X POST \
-            -d "provider[name]=${provider}" -d "access_token=${ATLAS_API_TOKEN}"
+            -d "provider[name]=${provider}" \
+            -d "access_token=${ATLAS_API_TOKEN}" &>/dev/null || \
+                 scream "unable do add ${channel}/${version}/${provider} to Atlas. Aborting."
     done
-    updateVersionDescription "$@"
+    updateVersionDescription "${user}" "${channel}" "${version}"
 }
 
 checkIfVersionExists () {
@@ -134,9 +140,9 @@ main () {
     echo "   \t\t(as off $(date -u "+%Y.%m.%d %H:%M"))"
     for channel in "${CHANNELS[@]}"; do
         currentAtlas=$(getDataFromAtlas "${ATLAS_USERNAME}" "${channel}")
-        id=$(getVersionID "${channel}")
+        latest=$(getVersionID "${channel}")
         already=$(getExistingReleases "${currentAtlas}")
-        current="${already} ${id}"
+        current="${already} ${latest}"
         versions=$( echo "${current}" | tr " " "\n" | sort -nur )
 
         echo "   - ${channel}"
@@ -151,8 +157,9 @@ main () {
                     echo "       > ${provider}: box not yet uploaded"
                 done
             else
+                echo "     - ${version} ${status}"
                 [[  "$#" -eq 1 && "$1" == "-n" ]] && \
-                    addNewVersion "${ATLAS_USERNAME}" "${channel}" "${id}"
+                    addNewVersion "${ATLAS_USERNAME}" "${channel}" "${version}"
             fi
         done
         rm -rf "${currentAtlas}"
