@@ -27,21 +27,3 @@ coreos:
         [Path]
         PathExists=/var/lib/coreos-vagrant/vagrantfile-user-data
         Unit=user-cloudinit@var-lib-coreos\x2dvagrant-vagrantfile\x2duser\x2ddata.service
-
-    - name: docker-tcp.socket
-      command: start
-      runtime: no
-      content: |
-        [Unit]
-        Description=Docker Socket for the API
-
-        [Socket]
-        ListenStream=2375
-        Service=docker.service
-        BindIPv6Only=both
-
-        [Install]
-        WantedBy=sockets.target
-
-    - name: docker.service
-      command: start
