@@ -28,7 +28,7 @@ fetchVersionReleaseNotes () {
     preAuth=(-H "Authorization: token ${GITHUB_API_TOKEN} ")
     [[ -z "${GITHUB_API_TOKEN}" ]] && preAuth=()
     jqQ=".[] | select(.tag_name==\$revision) .body"
-    curl "${preAuth[@]}" -s https://api.github.com/repos/coreos/manifest/releases | \
+    curl "${preAuth[@]}" -sk https://api.github.com/repos/coreos/manifest/releases | \
     jq --arg revision "${revision}" "${jqQ}" -e || \
           scream "oops. ${revision} doesn't seem available at github..."
 }
@@ -51,7 +51,7 @@ updateVersionDescription () {
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}
     raw_summary=$(generateVersionSummary "${user}" "${channel}" "${version}")
     summary=$(echo "${raw_summary}" | sed -e 's,\\,,g')
-    curl -s "${endpoint}" -X PUT \
+    curl -sk "${endpoint}" -X PUT \
            -d "version[description]=${summary}" \
            -d "access_token=${ATLAS_API_TOKEN}" &>/dev/null || \
          scream "unable do update summary of ${channel}/${version}. Aborting."
@@ -61,7 +61,7 @@ updateAllVersionsDescriptions () {
     for channel in "${CHANNELS[@]}"; do
         endpoint="${ATLAS_API_ENDPOINT}/${ATLAS_USERNAME}/coreos-${channel}/"
         jqQ=" .versions[] | select(.status==\"active\") | .version"
-        revisions=$(curl -s "${endpoint}" | jq "${jqQ}" | cut -c 2- | rev | cut -c 2- | rev)
+        revisions=$(curl -sk "${endpoint}" | jq "${jqQ}" | cut -c 2- | rev | cut -c 2- | rev)
         for revision in ${revisions}; do
                 printf "%s\n" "==${channel}== ${revision} ==="
                 updateVersionDescription "${ATLAS_USERNAME}" "${channel}" "${revision}"
@@ -72,12 +72,12 @@ updateAllVersionsDescriptions () {
 addNewVersion () {
     declare user="$1" channel="$2" version="$3"
     endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/versions
-    curl -s "${endpoint}" -X POST -d "version[version]=${version}" \
+    curl -sk "${endpoint}" -X POST -d "version[version]=${version}" \
          -d "access_token=${ATLAS_API_TOKEN}" &>/dev/null || \
         scream "unable do add ${channel}/${version} to Atlas. Aborting."
     for provider in "${PROVIDERS[@]}"; do
         endpoint=${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}/version/${version}/providers
-        curl -s "${endpoint}" -X POST \
+        curl -sk "${endpoint}" -X POST \
             -d "provider[name]=${provider}" \
             -d "access_token=${ATLAS_API_TOKEN}" &>/dev/null || \
                  scream "unable do add ${channel}/${version}/${provider} to Atlas. Aborting."
@@ -113,7 +113,7 @@ checkIfVersionIsPublished () {
 getVersionID () {
     declare channel="$1"
     v_url="http://${channel}.release.core-os.net/amd64-usr/current/version.txt"
-    curl -Ls "${v_url}" | grep COREOS_VERSION_ID= | sed -e 's,.*=,,'
+    curl -Lsk "${v_url}" | grep COREOS_VERSION_ID= | sed -e 's,.*=,,'
 }
 checkRequires () {
     for bin in jq curl sed tr cat cut grep rev sort; do
@@ -125,7 +125,7 @@ checkRequires () {
 getDataFromAtlas () {
     declare user="$1" channel="$2"
     tmp="$(mktemp)"
-    curl -s "${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}"/ > "${tmp}"
+    curl -sk "${ATLAS_API_ENDPOINT}/${user}/coreos-${channel}"/ > "${tmp}"
     echo "${tmp}"
 }
 
