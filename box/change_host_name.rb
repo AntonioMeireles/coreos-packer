@@ -10,7 +10,6 @@ require Vagrant.source_root.join("plugins/guests/coreos/cap/change_host_name.rb"
 
 CLOUD_CONFIG = <<EOF
 #cloud-config
-
 hostname: %s
 EOF
 
@@ -26,7 +25,7 @@ module VagrantPlugins
             temp.close
 
             path = "/var/tmp/hostname.yml"
-            path_esc = path.gsub("/", "-")
+            path_esc = path.gsub("/", "-")[1..-1]
             comm.upload(temp.path, path)
             comm.sudo("systemctl start system-cloudinit@#{path_esc}.service")
           end
