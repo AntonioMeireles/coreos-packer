@@ -130,8 +130,9 @@ getDataFromAtlas () {
 }
 
 getExistingReleases () {
-    declare currentAtlas="$1"
-    jq '.versions[]| .version' < "${currentAtlas}" | cut -c 2- | rev | cut -c 2- | rev
+    declare channel="$1"
+    repository=http://${channel}.release.core-os.net/amd64-usr/
+    curl -Ls "${repository}" | grep href | sed -e "s,.*\">,," -e "s,/.*,," | grep -v current
 }
 
 main () {
@@ -141,7 +142,8 @@ main () {
     for channel in "${CHANNELS[@]}"; do
         currentAtlas=$(getDataFromAtlas "${ATLAS_USERNAME}" "${channel}")
         latest=$(getVersionID "${channel}")
-        already=$(getExistingReleases "${currentAtlas}")
+        already=$(getExistingReleases "${channel}")
+        # already=$(getExistingReleases "${currentAtlas}")
         current="${already} ${latest}"
         versions=$( echo "${current}" | tr " " "\n" | sort -nur )
 
@@ -157,9 +159,12 @@ main () {
                     echo "       > ${provider}: box not yet uploaded"
                 done
             else
-                echo "     - ${version} ${status}"
-                [[  "$#" -eq 1 && "$1" == "-n" ]] && \
-                    addNewVersion "${ATLAS_USERNAME}" "${channel}" "${version}"
+                # don't care about too early revs.
+                if [[ $(echo "${version}" | cut -d. -f1) -gt 600 ]]; then
+                    echo "     - ${version} ${status}"
+                    [[  "$#" -eq 1 && "$1" == "-n" ]] && \
+                        addNewVersion "${ATLAS_USERNAME}" "${channel}" "${version}"
+                fi
             fi
         done
         rm -rf "${currentAtlas}"
